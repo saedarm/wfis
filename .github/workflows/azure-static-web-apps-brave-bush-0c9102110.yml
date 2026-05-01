@@ -34,6 +34,7 @@ jobs:
           ls -la published/wwwroot/_framework/blazor.webassembly.js || echo "NOT FOUND"
           echo "=== all js files in _framework ==="
           find published/wwwroot/_framework/ -name "*.js"
+          cat published/wwwroot/index.html
 
       - name: Build And Deploy
         id: builddeploy
