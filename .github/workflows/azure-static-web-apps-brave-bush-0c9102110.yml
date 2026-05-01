@@ -23,16 +23,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install wasm-tools
+        run: dotnet workload install wasm-tools
+
       - name: Publish Blazor WASM
         run: dotnet publish faultgame.csproj -c Release -o published
-
-      - name: Inject Blazor script tag
-        run: |
-          BLAZOR_JS=$(find published/wwwroot/_framework/ -name "blazor.webassembly.*.js" | xargs basename)
-          echo "Found: $BLAZOR_JS"
-          sed -i "s|<!-- Blazor -->|<!-- Blazor -->\n    <script src=\"_framework/$BLAZOR_JS\"></script>|" published/wwwroot/index.html
-          echo "=== updated index.html tail ==="
-          tail -10 published/wwwroot/index.html
 
       - name: Build And Deploy
         id: builddeploy
