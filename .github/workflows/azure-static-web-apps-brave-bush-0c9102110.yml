@@ -26,15 +26,13 @@ jobs:
       - name: Publish Blazor WASM
         run: dotnet publish faultgame.csproj -c Release -o published
 
-      - name: Debug framework
+      - name: Inject Blazor script tag
         run: |
-          echo "=== _framework contents ==="
-          ls published/wwwroot/_framework/ | head -10
-          echo "=== blazor.webassembly.js exists? ==="
-          ls -la published/wwwroot/_framework/blazor.webassembly.js || echo "NOT FOUND"
-          echo "=== all js files in _framework ==="
-          find published/wwwroot/_framework/ -name "*.js"
-          cat published/wwwroot/index.html
+          BLAZOR_JS=$(find published/wwwroot/_framework/ -name "blazor.webassembly.*.js" | xargs basename)
+          echo "Found: $BLAZOR_JS"
+          sed -i "s|<!-- Blazor -->|<!-- Blazor -->\n    <script src=\"_framework/$BLAZOR_JS\"></script>|" published/wwwroot/index.html
+          echo "=== updated index.html tail ==="
+          tail -10 published/wwwroot/index.html
 
       - name: Build And Deploy
         id: builddeploy
