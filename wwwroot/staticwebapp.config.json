@@ -1,4 +1,4 @@
-﻿{
+{
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
@@ -10,10 +10,18 @@
       "/*.css",
       "/*.png",
       "/*.ico",
-      "/*.svg"
+      "/*.svg",
+      "/*.geojson",
+      "/*.json"
     ]
   },
   "globalHeaders": {
     "cache-control": "no-cache"
+  },
+  "mimeTypes": {
+    ".dll": "application/octet-stream",
+    ".wasm": "application/wasm",
+    ".blat": "application/octet-stream",
+    ".dat": "application/octet-stream"
   }
 }
