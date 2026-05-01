@@ -1,0 +1,19 @@
+﻿{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/assets/*",
+      "/sounds/*",
+      "/css/*",
+      "/_framework/*",
+      "/*.js",
+      "/*.css",
+      "/*.png",
+      "/*.ico",
+      "/*.svg"
+    ]
+  },
+  "globalHeaders": {
+    "cache-control": "no-cache"
+  }
+}

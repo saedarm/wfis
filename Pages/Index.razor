@@ -1,0 +1,297 @@
+﻿@page "/"
+@using faultgame.Services
+@using faultgame.Models
+@inject AuthService AuthService
+@inject SupabaseService Supabase
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Whose Fault Is This?</PageTitle>
+
+<div class="landing">
+
+    @* ── Hero ── *@
+    <div class="hero">
+        <div class="hero-photo-wrap">
+            <img src="assets/sam-placeholder.jpg"
+                 alt="Sam A."
+                 class="hero-photo" />
+            <div class="hero-photo-caption">A GAME BY SAM A.</div>
+        </div>
+
+        <div class="hero-content">
+            <h1 class="hero-title">WHOSE<br/>FAULT<br/>IS THIS?</h1>
+            <p class="hero-tagline">A daily geography blame game.<br/>Five questions. One chance. No mercy.</p>
+
+            <div class="hero-actions">
+                @if (AuthService.IsLoggedIn)
+                {
+                    <button class="btn-play" @onclick='() => Nav.NavigateTo("/game")'>
+                        PLAY TODAY'S GAME
+                    </button>
+                    <button class="btn-ghost" @onclick="SignOut">
+                        Sign Out (@AuthService.Username)
+                    </button>
+                }
+                else
+                {
+                    <button class="btn-play" @onclick='() => _showAuth = true'>
+                        PLAY TODAY'S GAME
+                    </button>
+                }
+
+                <button class="btn-ghost" @onclick='() => _showTutorial = true'>
+                    HOW TO PLAY
+                </button>
+
+                <button class="btn-ghost" @onclick="OpenLeaderboard">
+                    LEADERBOARD
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @* ── Auth Modal ── *@
+    @if (_showAuth)
+    {
+        <div class="modal-backdrop" @onclick="() => _showAuth = false">
+            <div class="modal" @onclick:stopPropagation>
+                <button class="modal-close" @onclick="() => _showAuth = false">✕</button>
+                <h2 class="modal-title">@(_authMode == "login" ? "Welcome Back" : "Join the Blame")</h2>
+
+                <div class="auth-tabs">
+                    <button class="tab @(_authMode == "login" ? "active" : "")"
+                            @onclick='() => _authMode = "login"'>Sign In</button>
+                    <button class="tab @(_authMode == "signup" ? "active" : "")"
+                            @onclick='() => _authMode = "signup"'>Create Account</button>
+                </div>
+
+                @if (_authMode == "signup")
+                {
+                    <input class="auth-input" type="text" placeholder="Username"
+                           @bind="_username" @bind:event="oninput" />
+                }
+                <input class="auth-input" type="email" placeholder="Email"
+                       @bind="_email" @bind:event="oninput" />
+                <input class="auth-input" type="password" placeholder="Password"
+                       @bind="_password" @bind:event="oninput"
+                       @onkeydown="HandleKeyDown" />
+
+                @if (_authMode == "signup")
+                {
+                    <p class="auth-disclaimer">
+                        ⚠️ By creating an account you agree to receive a daily email from me.
+                        It will contain today's questions and a subject line that is probably
+                        funnier than it has any right to be. You can unsubscribe but I'll be hurt.
+                    </p>
+                }
+
+                @if (!string.IsNullOrEmpty(_authError))
+                {
+                    <p class="auth-error">@_authError</p>
+                }
+
+                <button class="btn-primary" @onclick="HandleAuth" disabled="@_authLoading">
+                    @(_authLoading ? "..." : _authMode == "login" ? "Let Me In" : "Create Account & Play")
+                </button>
+            </div>
+        </div>
+    }
+
+    @* ── Tutorial Modal ── *@
+    @if (_showTutorial)
+    {
+        <div class="modal-backdrop" @onclick="() => _showTutorial = false">
+            <div class="modal modal-tutorial" @onclick:stopPropagation>
+                <button class="modal-close" @onclick="() => _showTutorial = false">✕</button>
+
+                <div class="tutorial-slides">
+                    @if (_tutorialSlide == 0)
+                    {
+                        <div class="tutorial-slide">
+                            <div class="tutorial-icon">🗺️</div>
+                            <h3>The Map</h3>
+                            <p>Every day you get 5 questions — one from each region of the world.
+                               A question appears. You click the country you think is responsible.
+                               You have <strong>30 seconds</strong> to decide.
+                               No hints. No country names. Just vibes.</p>
+                        </div>
+                    }
+                    else if (_tutorialSlide == 1)
+                    {
+                        <div class="tutorial-slide">
+                            <div class="tutorial-icon">📍</div>
+                            <h3>Scoring by Distance</h3>
+                            <p>You're scored on how close your click was to the correct country.
+                               Not right/wrong — distance. Click Germany when it's Austria? You'll live.
+                               Click Iceland when it's Singapore? You will not.</p>
+                            <div class="tier-examples">
+                                <span class="tier nail">✅  &lt;200km — Nailed it</span>
+                                <span class="tier close">🟡  &lt;800km — Close</span>
+                                <span class="tier medium">🟠  &lt;2000km — Rough</span>
+                                <span class="tier far">💨  2000km+ — Fart sound</span>
+                            </div>
+                        </div>
+                    }
+                    else if (_tutorialSlide == 2)
+                    {
+                        <div class="tutorial-slide">
+                            <div class="tutorial-icon">⏱️</div>
+                            <h3>Speed Bonus</h3>
+                            <p>The faster you answer the more points you earn.
+                               Each question is worth up to <strong>1,000 points</strong> —
+                               800 from distance, 200 from speed.
+                               Maximum total: 5,000. Minimum: dignity.</p>
+                        </div>
+                    }
+                    else if (_tutorialSlide == 3)
+                    {
+                        <div class="tutorial-slide">
+                            <div class="tutorial-icon">📤</div>
+                            <h3>Share Your Score</h3>
+                            <p>At the end you get a shareable image showing your results.
+                               Copy it. Paste it in the group chat. Explain yourself.
+                               Come back tomorrow and do it again.</p>
+                            <p class="tutorial-note">
+                                You'll get a daily email reminder.
+                                It will have a funny subject line. This is non-negotiable.
+                            </p>
+                        </div>
+                    }
+                </div>
+
+                <div class="tutorial-nav">
+                    <button class="btn-ghost" @onclick="PrevSlide"
+                            disabled="@(_tutorialSlide == 0)">← Back</button>
+                    <span class="slide-dots">
+                        @for (int i = 0; i < 4; i++)
+                        {
+                            var idx = i;
+                            <span class="dot @(_tutorialSlide == idx ? "active" : "")"
+                                  @onclick="() => _tutorialSlide = idx"></span>
+                        }
+                    </span>
+                    @if (_tutorialSlide < 3)
+                    {
+                        <button class="btn-ghost" @onclick="NextSlide">Next →</button>
+                    }
+                    else
+                    {
+                        <button class="btn-play btn-small" @onclick="StartPlaying">Play →</button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── Leaderboard Modal ── *@
+    @if (_showLeaderboard)
+    {
+        <div class="modal-backdrop" @onclick="() => _showLeaderboard = false">
+            <div class="modal" @onclick:stopPropagation>
+                <button class="modal-close" @onclick="() => _showLeaderboard = false">✕</button>
+                <h2 class="modal-title">This Week's Standings</h2>
+
+                @if (_leaderboard.Count == 0)
+                {
+                    <p class="muted" style="text-align:center;padding:2rem">Loading...</p>
+                }
+                else
+                {
+                    <ol class="leaderboard-list">
+                        @foreach (var (entry, rank) in _leaderboard.Select((e, i) => (e, i + 1)))
+                        {
+                            <li class="@(entry.UserId == AuthService.CurrentUser?.Id ? "you" : "")">
+                                <span class="lb-rank">
+                                    @(rank switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => rank + "." })
+                                </span>
+                                <span class="lb-name">@entry.Username</span>
+                                <span class="lb-score">@entry.TotalScore.ToString("N0") pts</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
+        </div>
+    }
+
+    <footer class="landing-footer">
+        <span>Whose Fault Is This? © @DateTime.UtcNow.Year</span>
+        <span>Written by Sam A. &amp; Ian</span>
+    </footer>
+
+</div>
+
+@code {
+    private bool _showAuth        = false;
+    private bool _showTutorial    = false;
+    private bool _showLeaderboard = false;
+    private int  _tutorialSlide   = 0;
+
+    private string _authMode  = "login";
+    private string _email     = "";
+    private string _password  = "";
+    private string _username  = "";
+    private string? _authError;
+    private bool _authLoading = false;
+
+    private List<Score> _leaderboard = new();
+
+    protected override void OnInitialized()
+    {
+        AuthService.OnAuthStateChanged += StateHasChanged;
+    }
+
+    private async Task OpenLeaderboard()
+    {
+        _showLeaderboard = true;
+        _leaderboard = await Supabase.GetWeeklyLeaderboardAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleAuth()
+    {
+        _authError  = null;
+        _authLoading = true;
+
+        if (_authMode == "login")
+        {
+            var (ok, err) = await AuthService.SignInAsync(_email, _password);
+            if (ok) { _showAuth = false; Nav.NavigateTo("/game"); }
+            else _authError = err ?? "Sign in failed.";
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(_username))
+            {
+                _authError = "Username required.";
+                _authLoading = false;
+                return;
+            }
+            var (ok, err) = await AuthService.SignUpAsync(_email, _password, _username);
+            if (ok) { _showAuth = false; Nav.NavigateTo("/game"); }
+            else _authError = err ?? "Sign up failed.";
+        }
+
+        _authLoading = false;
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await HandleAuth();
+    }
+
+    private async Task SignOut() => await AuthService.SignOutAsync();
+
+    private void NextSlide() { if (_tutorialSlide < 3) _tutorialSlide++; }
+    private void PrevSlide() { if (_tutorialSlide > 0) _tutorialSlide--; }
+
+    private void StartPlaying()
+    {
+        _showTutorial = false;
+        if (AuthService.IsLoggedIn) Nav.NavigateTo("/game");
+        else _showAuth = true;
+    }
+
+    public void Dispose() => AuthService.OnAuthStateChanged -= StateHasChanged;
+}

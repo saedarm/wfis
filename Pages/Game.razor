@@ -1,0 +1,350 @@
+﻿Yes just `Game.razor`. Here's the full updated file:
+
+```razor
+@page "/game"
+@using faultgame.Models
+@using faultgame.Services
+@inject GameService GameService
+@inject AuthService AuthService
+@inject SupabaseService SupabaseService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<PageTitle>Whose Fault Is This?</PageTitle>
+
+@if (!AuthService.IsLoggedIn)
+{
+    Nav.NavigateTo("/");
+    return;
+}
+
+<div class="game-layout">
+
+    <header class="game-header">
+        <a href="/" class="game-logo">🗺️ WHOSE FAULT IS THIS?</a>
+        <div class="header-center">
+            @for (int i = 0; i < 5; i++)
+            {
+                var idx = i;
+                string cls = "progress-pip";
+                if (idx < _state.Results.Count)
+                {
+                    var r = _state.Results[idx];
+                    cls += r.Phase1Correct && r.CityTier == "nail"  ? " pip-nail"
+                         : r.Phase1Correct && r.CityTier == "close" ? " pip-close"
+                         : r.Phase1Correct                          ? " pip-miss"
+                         : " pip-timeout";
+                }
+                else if (idx == _state.CurrentQuestionIndex) cls += " pip-active";
+                <span class="@cls"></span>
+            }
+        </div>
+        <div class="header-right">
+            <button class="mute-btn" @onclick="ToggleMute">
+                @(_muted ? "🔇" : "🔊")
+            </button>
+            <span class="player-chip">@AuthService.Username</span>
+        </div>
+    </header>
+
+    @if (_alreadyPlayed)
+    {
+        @* ── Already Played Screen ── *@
+        <div class="already-played-screen">
+            <div class="already-played-inner">
+                <span class="already-played-icon">🗺️</span>
+                <h2>You've already played today.</h2>
+                <p>Come back tomorrow for five new questions.</p>
+                <p class="already-played-sub">
+                    Today's answers will be revealed at midnight UTC.
+                </p>
+                <a href="/" class="btn-play" style="text-decoration:none;text-align:center;">
+                    Back to Home
+                </a>
+            </div>
+        </div>
+    }
+    else if (_state.GameComplete)
+    {
+        @* ── Results ── *@
+        <div class="results-screen">
+            <h2 class="results-title">Today's Verdict</h2>
+            <p class="results-score">@_state.TotalScore.ToString("N0") / 5,000 pts</p>
+
+            <div class="results-breakdown">
+                @foreach (var r in _state.Results)
+                {
+                    <div class="result-row @r.CityTier">
+                        <span class="result-emoji">@_state.RegionEmoji(r.Region)</span>
+                        <span class="result-region">@r.Region.ToUpper()</span>
+                        <div class="result-detail">
+                            <span class="result-phase1 @(r.Phase1Correct ? "correct" : "wrong")">
+                                @(r.Phase1Correct ? "✅" : "❌") country
+                            </span>
+                            <span class="result-city">
+                                📍 @r.CityName — @((int)r.CityDistanceKm)km off
+                            </span>
+                        </div>
+                        <span class="result-pts">@r.Score pts</span>
+                    </div>
+                }
+            </div>
+
+            @if (_shareImageUrl != null)
+            {
+                <img src="@_shareImageUrl" class="share-preview" alt="Score card" />
+            }
+
+            <div class="results-actions">
+                <button class="btn-play" @onclick="CopyShareImage">
+                    @(_copyState switch {
+                        "copying" => "...",
+                        "copied"  => "✅ Copied!",
+                        "failed"  => "⬇️ Download Instead",
+                        _         => "📋 Copy Score Image"
+                    })
+                </button>
+                <button class="btn-ghost" @onclick="DownloadShareImage">Save Image</button>
+            </div>
+
+            <div class="leaderboard-preview">
+                <h3>Today's Top 5</h3>
+                @if (_leaderboard.Count == 0)
+                {
+                    <p class="muted">Loading...</p>
+                }
+                else
+                {
+                    <ol class="leaderboard-list">
+                        @foreach (var (entry, rank) in _leaderboard.Take(5).Select((e, i) => (e, i + 1)))
+                        {
+                            <li class="@(entry.UserId == AuthService.CurrentUser?.Id ? "you" : "")">
+                                <span class="lb-rank">
+                                    @(rank switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => rank + "." })
+                                </span>
+                                <span class="lb-name">@entry.Username</span>
+                                <span class="lb-score">@entry.TotalScore.ToString("N0")</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
+        </div>
+    }
+    else if (_state.CurrentQuestion is { } q)
+    {
+        @* ── Active Game ── *@
+ 
+
+        <div class="question-card">
+            <span class="region-badge @q.Region">@q.Region.ToUpper()</span>
+            <div class="clue-wrap">
+                @if (_state.Phase == 1)
+                {
+                    <p class="question-prompt">@q.Phase1Clue</p>
+                }
+                else
+                {
+                    <p class="phase1-result @(_state.Phase1Correct ? "correct" : "wrong")">
+                        @(_state.Phase1Correct
+                            ? $"✅ {q.CountryName} — correct!"
+                            : $"❌ {_state.ClickedCountryName} — the country was {q.CountryName}")
+                    </p>
+                    <p class="question-prompt">@q.Phase2Clue</p>
+                }
+            </div>
+        </div>
+
+        <div class="map-wrapper">
+            <div id="leaflet-map" class="leaflet-map-container"></div>
+        </div>
+
+        @if (_state.RoundComplete)
+        {
+            <div class="reaction-overlay @_state.DistanceTier"
+                 @onclick="HandleAdvance">
+                <div class="reaction-inner">
+                    <span class="reaction-icon">
+                        @(_state.DistanceTier switch {
+                            "nail"   => "✅",
+                            "close"  => "🟡",
+                            "medium" => "🟠",
+                            _        => "💨"
+                        })
+                    </span>
+                    <p class="reaction-distance">
+                        @((int)_state.LastDistanceKm!.Value)km from @q.CityName
+                        &nbsp;·&nbsp;
+                        <strong>+@_state.LastScore pts</strong>
+                    </p>
+                    <p class="reaction-text">@_state.ReactionText</p>
+                    <button class="btn-next">
+                        @(_state.CurrentQuestionIndex >= 4 ? "See Results →" : "Next Question →")
+                    </button>
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="loading">Loading today's game...</div>
+    }
+
+</div>
+
+@code {
+    private GameState _state => GameService.State;
+    private DotNetObjectReference<Game>? _dotNetRef;
+    private List<Score> _leaderboard = new();
+    private string? _shareImageUrl;
+    private string _copyState = "idle";
+    private bool _muted = false;
+    private bool _mapInitialized = false;
+    private bool _alreadyPlayed = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        GameService.OnStateChanged += HandleStateChanged;
+
+        if (AuthService.IsLoggedIn)
+        {
+            _alreadyPlayed = await SupabaseService.HasPlayedTodayAsync(
+                AuthService.CurrentUser!.Id!);
+        }
+
+        if (!_alreadyPlayed)
+            await GameService.LoadTodaysGameAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("loadSounds");
+        }
+
+        if (!_mapInitialized
+            && !_alreadyPlayed
+            && _dotNetRef != null
+            && _state.CurrentQuestion != null
+            && !_state.GameComplete)
+        {
+            _mapInitialized = true;
+            await JS.InvokeVoidAsync("mapLeafletInit", _dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPhase1Click(string code, string name, double lat, double lon)
+    {
+        if (_state.Phase1Complete || _state.GameComplete) return;
+        await GameService.SubmitPhase1Async(code, name, lat, lon);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnPhase2Click(double lat, double lon)
+    {
+        if (_state.Phase2Complete || _state.GameComplete) return;
+        await GameService.SubmitPhase2Async(lat, lon);
+        StateHasChanged();
+    }
+
+    private async Task HandleAdvance()
+    {
+        await GameService.AdvanceToNextQuestionAsync();
+
+        if (_state.GameComplete)
+        {
+            await GameService.SaveResultsAsync();
+            _shareImageUrl = await GameService.GenerateShareImageAsync(
+                AuthService.Username ?? "player",
+                "whosefaultisthis.com"
+            );
+            _leaderboard = await GameService.GetLeaderboardForTodayAsync();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task CopyShareImage()
+    {
+        if (_shareImageUrl == null) return;
+        _copyState = "copying";
+        StateHasChanged();
+        var ok = await GameService.CopyShareImageAsync(_shareImageUrl);
+        _copyState = ok ? "copied" : "failed";
+        StateHasChanged();
+        if (ok)
+        {
+            await Task.Delay(2500);
+            _copyState = "idle";
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadShareImage()
+    {
+        if (_shareImageUrl == null) return;
+        await JS.InvokeVoidAsync("downloadImage", _shareImageUrl,
+            $"whose-fault-{DateTime.UtcNow:yyyy-MM-dd}.png");
+    }
+
+    private async Task ToggleMute()
+    {
+        _muted = !_muted;
+        await JS.InvokeVoidAsync("setMuted", _muted);
+    }
+
+    private void HandleStateChanged() => InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        GameService.OnStateChanged -= HandleStateChanged;
+        _dotNetRef?.Dispose();
+    }
+}
+```
+
+Then add this to `app.css`:
+
+```css
+.already-played-screen {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--paper);
+}
+
+.already-played-inner {
+    text-align: center;
+    max-width: 400px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+}
+
+.already-played-icon { font-size: 3rem; }
+
+.already-played-inner h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+}
+
+.already-played-inner p {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.already-played-sub {
+    font-size: 0.75rem !important;
+    border-top: 1px solid var(--paper-dark);
+    padding-top: 0.75rem;
+}
