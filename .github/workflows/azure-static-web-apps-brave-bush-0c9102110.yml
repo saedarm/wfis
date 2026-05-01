@@ -26,6 +26,13 @@ jobs:
       - name: Publish Blazor WASM
         run: dotnet publish faultgame.csproj -c Release -o published
 
+      - name: Debug framework
+        run: |
+          echo "=== _framework contents ==="
+          ls published/wwwroot/_framework/ | head -10
+          echo "=== blazor.webassembly.js exists? ==="
+          ls -la published/wwwroot/_framework/blazor.webassembly.js || echo "NOT FOUND"
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
