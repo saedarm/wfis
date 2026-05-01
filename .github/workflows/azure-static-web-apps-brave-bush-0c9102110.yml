@@ -29,6 +29,13 @@ jobs:
       - name: Publish Blazor WASM
         run: dotnet publish faultgame.csproj -c Release -o published
 
+      - name: Inject Blazor script
+        run: |
+          BLAZOR_JS=$(find published/wwwroot/_framework/ -name "blazor.webassembly.*.js" -not -name "*.gz" -not -name "*.br" | xargs basename)
+          echo "Injecting: $BLAZOR_JS"
+          sed -i "s|<!-- Blazor -->|<script src=\"_framework/$BLAZOR_JS\"></script>|" published/wwwroot/index.html
+          grep -i "blazor" published/wwwroot/index.html
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
