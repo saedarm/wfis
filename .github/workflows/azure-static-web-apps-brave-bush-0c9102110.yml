@@ -29,10 +29,16 @@ jobs:
       - name: Publish Blazor WASM
         run: dotnet publish faultgame.csproj -c Release -o published
 
-      - name: Fix Blazor script name
+      - name: Fix fingerprinted filenames
         run: |
-          cp published/wwwroot/_framework/blazor.webassembly.*.js published/wwwroot/_framework/blazor.webassembly.js
-          ls -la published/wwwroot/_framework/blazor.webassembly.js
+          cd published/wwwroot/_framework
+          for f in *.*.js; do
+            base=$(echo "$f" | sed 's/\.[a-z0-9]*\.js$/.js/')
+            echo "Copying $f -> $base"
+            cp "$f" "$base"
+          done
+          echo "=== JS files ==="
+          ls *.js | head -20
 
       - name: Build And Deploy
         id: builddeploy
